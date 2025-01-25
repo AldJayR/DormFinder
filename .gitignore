@@ -1,1 +1,49 @@
+### Django Core ###
+# Local development
+*.log
+*.pot
+*.pyc
+__pycache__/
+/local_settings.py
+/db.sqlite3
+/media/
+/staticfiles/
+
+# Virtual Environment
 venv/
+.env/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Security
+.env
+.env.local
+.secrets
+*.key
+*.pem
+*.cert
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+/test-reports/
+
+# Database
+/postgres_data/
+*.dump
+*.backup
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
