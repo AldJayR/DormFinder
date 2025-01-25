@@ -19,10 +19,13 @@ logger = logging.getLogger(__name__)
 AUTH_CACHE = caches[settings.JWT_AUTH.get('REVOCATION_CACHE', 'default')]
 
 def _token_hash(raw_token):
-    """Generate secure token hash for revocation list"""
-    return hashlib.sha256(
-        f"{settings.SECRET_KEY}{raw_token}".encode()
-    ).hexdigest()
+    """Generate secure token hash for revocation list using PBKDF2"""
+    return hashlib.pbkdf2_hmac(
+        'sha256',
+        raw_token.encode(),
+        settings.SECRET_KEY.encode(),
+        100000
+    ).hex()
 
 class UserDetailView(RetrieveAPIView):
     """
@@ -46,20 +49,37 @@ class UserDetailView(RetrieveAPIView):
         return response
 
 class SecureTokenMixin:
-    def _set_secure_cookies(self, response):
-        """Set secure HTTP-only cookies with JWT tokens"""
+    """Mixin providing security features for authentication views"""
+    
+    def _get_client_ip(self, request) -> str:
+        """Get client IP with proxy support
+        Args:
+            request: HttpRequest object
+        Returns:
+            str: Client IP address
+        """
+        xff = request.META.get('HTTP_X_FORWARDED_FOR')
+        return xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR', '')
+
+    def _set_secure_cookies(self, response: Response) -> None:
+        """Set secure HTTP-only cookies with JWT tokens
+        Args:
+            response: DRF Response object to modify
+        """
         if response.status_code == status.HTTP_200_OK:
-            # Set access token cookie
-            response.set_cookie(
-                key=settings.JWT_AUTH['ACCESS_COOKIE_NAME'],
-                value=response.data['access'],
-                httponly=True,
-                secure=settings.JWT_AUTH['COOKIE_SECURE'],
-                samesite=settings.JWT_AUTH['COOKIE_SAMESITE'],
-                max_age=settings.JWT_AUTH['ACCESS_TOKEN_LIFETIME'].total_seconds(),
-                path=settings.JWT_AUTH.get('COOKIE_PATH', '/'),
-                domain=settings.JWT_AUTH.get('COOKIE_DOMAIN')
-            )
+            # Safely set access token cookie
+            if 'access' in response.data:
+                response.set_cookie(
+                    key=settings.JWT_AUTH['ACCESS_COOKIE_NAME'],
+                    value=response.data['access'],
+                    httponly=True,
+                    secure=settings.JWT_AUTH['COOKIE_SECURE'],
+                    samesite=settings.JWT_AUTH['COOKIE_SAMESITE'],
+                    max_age=settings.JWT_AUTH['ACCESS_TOKEN_LIFETIME'].total_seconds(),
+                    path=settings.JWT_AUTH.get('COOKIE_PATH', '/'),
+                    domain=settings.JWT_AUTH.get('COOKIE_DOMAIN')
+                )
+                del response.data['access']  # Remove from response body
             
             # Set refresh token cookie if present
             if 'refresh' in response.data:
@@ -73,15 +93,7 @@ class SecureTokenMixin:
                     path=settings.JWT_AUTH.get('COOKIE_PATH', '/'),
                     domain=settings.JWT_AUTH.get('COOKIE_DOMAIN')
                 )
-            
-            # Remove tokens from response body
-            response.delete('access')
-            response.delete('refresh')
-
-    def _get_client_ip(self, request):
-        """Get client IP with proxy support"""
-        xff = request.META.get('HTTP_X_FORWARDED_FOR')
-        return xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR')
+                del response.data['refresh']  # Remove from response body
 
 class SecureTokenObtainPairView(SecureTokenMixin, TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
@@ -103,12 +115,18 @@ class SecureTokenObtainPairView(SecureTokenMixin, TokenObtainPairView):
                     f"from {self._get_client_ip(request)} "
                     f"via {request.META.get('HTTP_USER_AGENT', 'Unknown')}"
                 )
-            except User.DoesNotExist:
-                logger.error("User login succeeded but not found in database")
+            except User.DoesNotExist as e:
+                logger.error(
+                    f"User login succeeded but not found in database: {request.data.get('username', 'Unknown')}",
+                    exc_info=True
+                )
+                raise InvalidToken("Invalid credentials") from e
         else:
-            logger.warning(
+            logger.error(
                 f"Failed login attempt: {request.data.get('username', 'Unknown')} "
-                f"from {self._get_client_ip(request)}"
+                f"from {self._get_client_ip(request)} "
+                f"using {request.META.get('HTTP_USER_AGENT', 'Unknown')}",
+                exc_info=True
             )
         
         return response
@@ -123,7 +141,7 @@ class SecureTokenRefreshView(SecureTokenMixin, TokenRefreshView):
         response['X-CSRFToken'] = get_token(request)
         return response
 
-class RegisterView(generics.CreateAPIView):
+class RegisterView(SecureTokenMixin, generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserProfileSerializer
     permission_classes = [permissions.AllowAny]
@@ -159,9 +177,6 @@ class RegisterView(generics.CreateAPIView):
                     'school_id_number': 'Invalid NEUST ID format.'
                 })
 
-    def _get_client_ip(self, request):
-        xff = request.META.get('HTTP_X_FORWARDED_FOR')
-        return xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR')
 
 @api_view(['POST'])
 def logout_view(request):

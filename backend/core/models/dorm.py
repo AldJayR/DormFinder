@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.validators import MinValueValidator
 from .user import User
 from .amenity import Amenity
 
@@ -13,7 +14,8 @@ class Dorm(models.Model):
     address = models.TextField()
     monthly_rate = models.DecimalField(
         max_digits=10, 
-        decimal_places=2, 
+        decimal_places=2,
+        validators=[MinValueValidator(1500)],
         help_text="Monthly rent in PHP"
     )
     distance_from_school = models.CharField(

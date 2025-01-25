@@ -1,35 +1,41 @@
+from django.db import transaction
 from rest_framework import viewsets, status
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from core.models import Booking
 from core.serializers import booking_serializers
 from core.permissions import IsStudent
 
 class BookingViewSet(viewsets.ModelViewSet):
-    """PH academic calendar-aware bookings"""
-    serializer_class = booking_serializers
-    permission_classes = [IsStudent]
+    """
+    Handles student dorm bookings with conflict checking and transaction safety
+    """
+    serializer_class = booking_serializers.BookingSerializer
+    permission_classes = [IsAuthenticated, IsStudent]
 
     def get_queryset(self):
-        """Student-specific PH bookings"""
-        return Booking.objects.filter(user=self.request.user)
+        """Return bookings for current student with related data"""
+        return Booking.objects.filter(user=self.request.user).select_related('dorm', 'user')
 
     def create(self, request, *args, **kwargs):
-        """PH-style booking validation"""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        if self._has_booking_conflict(serializer.validated_data):
-            return Response(
-                {'detail': 'Date conflict with existing booking'},
-                status=status.HTTP_409_CONFLICT
-            )
-            
-        self.perform_create(serializer)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        """Atomic booking creation with conflict checking"""
+        with transaction.atomic():
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+
+            if self._has_booking_conflict(serializer.validated_data):
+                return Response(
+                    {'errors': {'dates': ['Conflicts with existing booking']}},
+                    status=status.HTTP_409_CONFLICT
+                )
+
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def _has_booking_conflict(self, data):
-        """PH academic calendar conflict check"""
-        return Booking.objects.filter(
+        """Check for overlapping bookings using database-level locking"""
+        return Booking.objects.select_for_update().filter(
             user=self.request.user,
             dorm=data['dorm'],
             move_in_date__lte=data['move_out_date'],

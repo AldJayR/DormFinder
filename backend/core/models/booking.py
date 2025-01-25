@@ -1,10 +1,15 @@
+import logging
 from django.db import models
-from django.utils.translation import gettext_lazy as _  
+from django.utils.translation import gettext_lazy as _
 from .user import User
 from .dorm import Dorm
 
+logger = logging.getLogger(__name__)
+
 
 class Booking(models.Model):
+    _status_change_notification_sent = False  # Track if notification was sent
+    
     class Status(models.TextChoices):
         PENDING = 'pending', _('Pending Approval')
         CONFIRMED = 'confirmed', _('Confirmed')
@@ -29,7 +34,8 @@ class Booking(models.Model):
         on_delete=models.CASCADE, 
         related_name='bookings'
     )
-    move_in_date = models.DateField(help_text="Follows PH academic calendar")
+    move_in_date = models.DateField(help_text="Follows academic calendar", db_index=True)
+    move_out_date = models.DateField(db_index=True)
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -45,25 +51,37 @@ class Booking(models.Model):
         indexes = [
             models.Index(fields=['status', 'created_at']),
             models.Index(fields=['move_in_date']),
+            models.Index(fields=['user', 'status'], name='booking_user_status_idx'),
         ]
         constraints = [
             models.CheckConstraint(
                 check=models.Q(move_in_date__gt=models.F('created_at')),
                 name='move_in_after_creation'
+            ),
+            models.CheckConstraint(
+                check=models.Q(move_out_date__gt=models.F('move_in_date')),
+                name='move_out_after_move_in'
+            ),
+            models.UniqueConstraint(
+                fields=['user', 'dorm', 'move_in_date'],
+                name='unique_user_dorm_movein'
             )
         ]
 
     def __str__(self):
-        return _(f"Booking #{self.id} - {self.dorm.name}")
+        return _("Booking #{id} - {name}").format(
+            id=self.id,
+            name=self.dorm.name
+        )
 
     def clean(self):
-        """Validate status transitions and move-in dates"""
+        """Validate status transitions and move-in dates with row locking"""
         from django.utils import timezone
         from django.core.exceptions import ValidationError
         
-        # Check status transitions
         if self.pk:
-            original = Booking.objects.get(pk=self.pk)
+            # Lock row for concurrent updates
+            original = Booking.objects.select_for_update().get(pk=self.pk)
             if original.status != self.status:
                 allowed_transitions = self.STATUS_TRANSITIONS.get(original.status, [])
                 if self.status not in allowed_transitions:
@@ -74,13 +92,29 @@ class Booking(models.Model):
                         }
                     })
 
-        # Validate move-in date
         if self.move_in_date < timezone.localtime(timezone.now()).date():
             raise ValidationError({
                 'move_in_date': _("Move-in date cannot be in the past")
             })
 
     def save(self, *args, **kwargs):
-        """Ensure validation is run on every save"""
-        self.full_clean()
-        super().save(*args, **kwargs)
+        """Atomic save with concurrency controls and dorm locking"""
+        from django.db import transaction
+        
+        with transaction.atomic():
+            self.full_clean()
+            super().save(*args, **kwargs)
+            
+            # Lock dorm row during availability update
+            dorm = Dorm.objects.select_for_update().get(pk=self.dorm_id)
+            dorm.update_availability_cache()
+            
+            if self.pk:
+                original = Booking.objects.get(pk=self.pk)
+                if original.status != self.status:
+                    logger.info(
+                        "Booking %d status changed: %s → %s",
+                        self.id,
+                        original.status,
+                        self.status
+                    )
