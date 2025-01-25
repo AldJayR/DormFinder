@@ -42,8 +42,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'channels',
     'core',
-    'chat',
-    'forum'
+    'chat'
 ]
 
 ASGI_APPLICATION = 'campusdorm_project.asgi.application'
