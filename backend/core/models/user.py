@@ -73,11 +73,9 @@ class User(AbstractUser):
         db_index=True
     )
 
-    # Remove first_name and last_name
     first_name = None
     last_name = None
 
-    # Fix related_name for auth model conflicts
     groups = models.ManyToManyField(
         'auth.Group',
         verbose_name=_('groups'),

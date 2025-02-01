@@ -6,7 +6,6 @@ from django.contrib.auth.admin import UserAdmin
 from .models import User, Dorm, Booking, Review, Payment, Amenity
 
 class CustomUserAdmin(UserAdmin):
-    # PH-specific admin configuration
     list_display = ('username', 'role', 'phone', 'school_id_number', 'is_verified')
     list_filter = ('role', 'is_verified')
     search_fields = ('username', 'phone', 'school_id_number')
@@ -23,8 +22,15 @@ class CustomUserAdmin(UserAdmin):
         ('Important dates', {'fields': ('last_login', 'date_joined')}),
     )
     
-    # Make encrypted fields read-only
     readonly_fields = ('phone', 'school_id_number')
+
+    # Define the add_fieldsets for the create view
+    add_fieldsets = (
+        (None, {
+            'classes': ('wide',),
+            'fields': ('username', 'password1', 'password2', 'role', 'phone', 'school_id_number', 'is_verified'),
+        }),
+    )
 
 class DormAdmin(admin.ModelAdmin):
     list_display = ('name', 'owner', 'monthly_rate', 'distance_from_school', 'created_at')

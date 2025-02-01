@@ -3,14 +3,14 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from core.models import Booking
-from core.serializers import booking_serializers
+from core.serializers.booking_serializers import BookingSerializer
 from core.permissions import IsStudent
 
 class BookingViewSet(viewsets.ModelViewSet):
     """
     Handles student dorm bookings with conflict checking and transaction safety
     """
-    serializer_class = booking_serializers.BookingSerializer
+    serializer_class = BookingSerializer
     permission_classes = [IsAuthenticated, IsStudent]
 
     def get_queryset(self):

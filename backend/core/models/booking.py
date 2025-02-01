@@ -92,9 +92,16 @@ class Booking(models.Model):
                         }
                     })
 
+        # Always validate move-in date regardless of status changes
         if self.move_in_date < timezone.localtime(timezone.now()).date():
             raise ValidationError({
                 'move_in_date': _("Move-in date cannot be in the past")
+            })
+            
+        # Validate dorm availability
+        if not self.dorm.is_available_for(self.move_in_date, self.move_out_date):
+            raise ValidationError({
+                'dorm': _("This dorm is not available for the selected dates")
             })
 
     def save(self, *args, **kwargs):

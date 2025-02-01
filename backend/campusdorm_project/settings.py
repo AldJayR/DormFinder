@@ -115,20 +115,20 @@ CACHES = {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
         'LOCATION': 'redis://127.0.0.1:6379/1',
         'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-            'SOCKET_CONNECT_TIMEOUT': 5,
-            'SOCKET_TIMEOUT': 5,
-            'CONNECTION_POOL_KWARGS': {'max_connections': 100}
+            'db': 1,
+            'max_connections': 100,
+            'socket_connect_timeout': 5,
+            'socket_timeout': 5
         }
     },
     'auth': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
         'LOCATION': 'redis://127.0.0.1:6379/2',
         'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-            'SOCKET_CONNECT_TIMEOUT': 5,
-            'SOCKET_TIMEOUT': 5,
-            'CONNECTION_POOL_KWARGS': {'max_connections': 50}
+            'db': 2,
+            'max_connections': 50,
+            'socket_connect_timeout': 5,
+            'socket_timeout': 5
         }
     }
 }

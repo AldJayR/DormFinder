@@ -5,7 +5,7 @@ from core.serializers import dorm_serializers
 from core.permissions import IsDormOwner
 
 class DormViewSet(ModelViewSet):
-    serializer_class = dorm_serializers
+    serializer_class = dorm_serializers.DormSerializer
     permission_classes = [IsDormOwner]
     filterset_fields = ['monthly_rate', 'distance_from_school']
     ordering_fields = ['created_at', 'monthly_rate']

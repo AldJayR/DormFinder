@@ -16,7 +16,7 @@ from core.serializers import CustomTokenObtainPairSerializer
 from core.serializers.user_serializers import UserProfileSerializer
 
 logger = logging.getLogger(__name__)
-AUTH_CACHE = caches[settings.JWT_AUTH.get('REVOCATION_CACHE', 'default')]
+AUTH_CACHE = caches[settings.SIMPLE_JWT.get('REVOCATION_CACHE', 'default')]
 
 def _token_hash(raw_token):
     """Generate secure token hash for revocation list using PBKDF2"""
